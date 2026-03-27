@@ -1,0 +1,26 @@
+{
+  "name": "security-research-keystroke-capture",
+  "version": "1.0.0",
+  "description": "Educational security research project demonstrating web-based keystroke capture and defense techniques",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "security",
+    "research",
+    "keylogger",
+    "education",
+    "cybersecurity",
+    "csp",
+    "defense"
+  ],
+  "author": "chiragedev",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}
