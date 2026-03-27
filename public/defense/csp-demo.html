@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSP Defense Demo — Security Research</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0a0a12; --card: #16162a; --border: rgba(255,255,255,0.06);
+            --text: #e2e8f0; --muted: #64748b; --primary: #6366f1;
+            --green: #22c55e; --green-dim: rgba(34,197,94,0.12);
+            --red: #ef4444; --red-dim: rgba(239,68,68,0.12);
+        }
+        body {
+            font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            padding: 40px 24px; flex-direction: column; gap: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+        .info-banner {
+            max-width: 500px; width: 100%; background: var(--green-dim);
+            border: 1px solid rgba(34,197,94,0.3); border-radius: 12px;
+            padding: 20px 24px; text-align: center;
+        }
+        .info-banner h2 {
+            font-size: 1rem; color: var(--green); margin-bottom: 8px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .info-banner p {
+            font-size: 0.8rem; color: var(--muted); line-height: 1.5;
+        }
+        .info-banner code {
+            font-family: 'JetBrains Mono', monospace; background: rgba(0,0,0,0.3);
+            padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; color: var(--green);
+        }
+        .login-card {
+            max-width: 400px; width: 100%; background: var(--card);
+            border: 1px solid var(--border); border-radius: 16px;
+            padding: 32px; position: relative; overflow: hidden;
+        }
+        .login-card::before {
+            content: '🛡️ CSP PROTECTED'; position: absolute; top: 0; left: 0; right: 0;
+            background: var(--green); color: #000; font-size: 0.65rem; font-weight: 700;
+            letter-spacing: 0.1em; text-align: center; padding: 4px;
+        }
+        .login-card h1 {
+            font-size: 1.3rem; margin-top: 16px; margin-bottom: 4px; text-align: center;
+        }
+        .login-card .subtitle {
+            font-size: 0.8rem; color: var(--muted); text-align: center; margin-bottom: 24px;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 4px; }
+        .form-group input {
+            width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+            font-family: inherit; font-size: 0.9rem; outline: none; transition: border-color 0.2s;
+        }
+        .form-group input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(34,197,94,0.15); }
+        .btn-submit {
+            width: 100%; padding: 10px; background: var(--green); color: #000;
+            border: none; border-radius: 8px; font-family: inherit; font-size: 0.9rem;
+            font-weight: 600; cursor: pointer; margin-top: 8px; transition: opacity 0.2s;
+        }
+        .btn-submit:hover { opacity: 0.9; }
+        .console-output {
+            max-width: 500px; width: 100%; background: #0d1117;
+            border: 1px solid var(--border); border-radius: 12px;
+            padding: 16px 20px; font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem; line-height: 1.8;
+        }
+        .console-output .title {
+            color: var(--muted); font-size: 0.65rem; text-transform: uppercase;
+            letter-spacing: 0.08em; margin-bottom: 12px;
+        }
+        .console-line { display: flex; gap: 8px; }
+        .console-line .prefix { color: var(--green); min-width: 20px; }
+        .console-line.error .prefix { color: var(--red); }
+        .console-line .msg { color: var(--text); }
+        .console-line.error .msg { color: var(--red); }
+        .nav-back {
+            color: var(--primary); text-decoration: none; font-size: 0.85rem;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <a href="/defense" class="nav-back">← Back to Defense Lab</a>
+
+    <div class="info-banner">
+        <h2>🛡️ Content Security Policy Active</h2>
+        <p>
+            This page is served with CSP headers that block outbound connections:<br>
+            <code>connect-src 'none'</code><br><br>
+            The keylogger script is loaded, but <strong>cannot send data anywhere</strong>.
+            Open your browser's DevTools Console to see the CSP violation errors.
+        </p>
+    </div>
+
+    <div class="login-card">
+        <h1>SecurePortal</h1>
+        <p class="subtitle">This form is protected by CSP</p>
+        <form id="csp-form">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="text" id="email" name="email" placeholder="you@example.com">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn-submit">Sign In (Protected)</button>
+        </form>
+    </div>
+
+    <div class="console-output">
+        <div class="title">Expected Browser Console Output</div>
+        <div class="console-line error">
+            <span class="prefix">✕</span>
+            <span class="msg">Refused to connect to 'ws://localhost:3000' because it violates the Content Security Policy: "connect-src 'none'"</span>
+        </div>
+        <div class="console-line error">
+            <span class="prefix">✕</span>
+            <span class="msg">Refused to load the script 'http://localhost:3000/socket.io/socket.io.js' because it violates the Content Security Policy: "script-src 'self'"</span>
+        </div>
+        <div class="console-line">
+            <span class="prefix">✓</span>
+            <span class="msg">All exfiltration attempts blocked. Keystrokes are safe.</span>
+        </div>
+    </div>
+
+    <!-- The SAME keylogger payload is loaded here — but CSP blocks its communication -->
+    <script src="/payload/keylogger.js"></script>
+
+    <script>
+        document.getElementById('csp-form').addEventListener('submit', e => e.preventDefault());
+    </script>
+</body>
+</html>

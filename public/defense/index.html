@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Defense Lab — Security Research</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0a0a12; --card: #16162a; --border: rgba(255,255,255,0.06);
+            --text: #e2e8f0; --muted: #64748b; --primary: #6366f1;
+            --green: #22c55e; --green-dim: rgba(34,197,94,0.12);
+        }
+        body {
+            font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text);
+            min-height: 100vh; padding: 40px 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 {
+            font-size: 2rem; font-weight: 700; margin-bottom: 8px;
+            letter-spacing: -0.03em;
+            background: linear-gradient(135deg, var(--green), #06b6d4);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .subtitle { color: var(--muted); margin-bottom: 40px; font-size: 0.95rem; }
+        .nav-links { display: flex; gap: 16px; margin-bottom: 32px; }
+        .nav-links a {
+            color: var(--primary); text-decoration: none; font-size: 0.85rem;
+            font-weight: 500; padding: 6px 14px; border-radius: 6px;
+            border: 1px solid rgba(99,102,241,0.2); transition: all 0.2s;
+        }
+        .nav-links a:hover { background: rgba(99,102,241,0.1); }
+        .card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 16px; padding: 28px 32px; margin-bottom: 20px;
+            transition: border-color 0.3s;
+        }
+        .card:hover { border-color: rgba(255,255,255,0.12); }
+        .card h2 {
+            font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .card p { color: var(--muted); font-size: 0.85rem; line-height: 1.6; margin-bottom: 16px; }
+        .badge {
+            font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em;
+            padding: 3px 8px; border-radius: 4px;
+        }
+        .badge-green { background: var(--green-dim); color: var(--green); }
+        .badge-primary { background: rgba(99,102,241,0.15); color: var(--primary); }
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 20px; border-radius: 8px; font-family: inherit;
+            font-size: 0.85rem; font-weight: 600; cursor: pointer;
+            text-decoration: none; transition: all 0.2s; border: none;
+        }
+        .btn-green { background: var(--green); color: #000; }
+        .btn-green:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(34,197,94,0.3); }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(99,102,241,0.3); }
+        code {
+            font-family: 'JetBrains Mono', monospace; background: rgba(255,255,255,0.05);
+            padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav-links">
+            <a href="/target">← Target Page</a>
+            <a href="/dashboard">📊 Dashboard</a>
+        </div>
+
+        <h1>🛡️ Defense Lab</h1>
+        <p class="subtitle">Learn how to detect and prevent web-based keystroke capture attacks</p>
+
+        <div class="card">
+            <h2>
+                Content Security Policy (CSP)
+                <span class="badge badge-green">RECOMMENDED</span>
+            </h2>
+            <p>
+                CSP is the most powerful defense. It tells the browser which domains are allowed
+                to load scripts and where scripts can send data. With <code>connect-src 'none'</code>,
+                the keylogger cannot exfiltrate any data — even if the script executes.
+            </p>
+            <a href="/defense/csp-demo.html" class="btn btn-green">Try CSP Demo →</a>
+        </div>
+
+        <div class="card">
+            <h2>
+                Anti-Keylogger Techniques
+                <span class="badge badge-primary">CLIENT-SIDE</span>
+            </h2>
+            <p>
+                Client-side techniques like virtual keyboards, input randomization, and
+                keystroke noise injection can confuse or neutralize keyloggers. These are
+                used by some banking sites as an additional layer of defense.
+            </p>
+            <a href="/defense/anti-keylogger.html" class="btn btn-primary">Try Anti-Keylogger Demo →</a>
+        </div>
+
+        <div class="card">
+            <h2>📚 Additional Mitigation Strategies</h2>
+            <p>
+                <strong>Subresource Integrity (SRI)</strong> — Verify third-party scripts haven't been tampered with using
+                <code>integrity</code> attributes on <code>&lt;script&gt;</code> tags.<br><br>
+                <strong>Input Sanitization</strong> — Prevent XSS injection that could load a keylogger.<br><br>
+                <strong>Same-Origin Policy</strong> — Restrict cross-origin requests from your site.<br><br>
+                <strong>Network Monitoring</strong> — Watch for suspicious outbound connections in DevTools.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
