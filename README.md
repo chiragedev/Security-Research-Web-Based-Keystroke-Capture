@@ -19,6 +19,7 @@ Unlike basic keyloggers, this project provides:
 - 🔴 **Real-time monitoring dashboard** with WebSocket (Socket.IO) streaming
 - 🧠 **5 capture vectors**: keystrokes, clipboard, form submissions, click tracking, and session fingerprinting
 - 🛡️ **Defense Lab**: Demonstrates how to prevent these attacks using CSP, virtual keyboards, and noise injection
+- 🌐 **Network Traffic Analyzer**: Real-time packet-level visualization of exfiltration traffic with decoded payloads
 - 📊 **Session management**: Tracks multiple victims simultaneously with device fingerprinting
 - 🔄 **Input reconstruction**: Reassembles typed passwords and emails from raw keystrokes
 
@@ -73,6 +74,7 @@ Then open:
 | 🎯 Target Page | `http://localhost:3000/target` | Simulated login page (victim's view) |
 | 📊 Dashboard | `http://localhost:3000/dashboard` | Real-time keystroke monitor |
 | 🛡️ Defense Lab | `http://localhost:3000/defense` | CSP & anti-keylogger demos |
+| 🌐 Traffic Analyzer | `http://localhost:3000/defense/network-analyzer.html` | Live network exfiltration viewer |
 
 ---
 
@@ -99,7 +101,8 @@ Then open:
 │   └── defense/                 # Defense demonstrations
 │       ├── index.html           # Defense lab landing
 │       ├── csp-demo.html        # CSP blocking demo
-│       └── anti-keylogger.html  # Client-side defenses
+│       ├── anti-keylogger.html  # Client-side defenses
+│       └── network-analyzer.html # Network traffic analyzer
 │
 └── logs/                        # (gitignored) Captured data
 ```
@@ -132,6 +135,9 @@ Replaces physical keyboard input with on-screen clicks. Keyloggers listening for
 
 ### Keystroke Noise Injection
 Injects fake keystrokes between real ones, making captured data unreliable and difficult to analyze.
+
+### Network Traffic Analysis
+The **Network Traffic Analyzer** visualizes every WebSocket message the keylogger emits — showing packet payloads, data volumes, timing graphs, and a side-by-side comparison of what the user typed vs. what was exfiltrated. It teaches defenders what suspicious traffic patterns look like in DevTools.
 
 ### Additional Mitigations
 - **Subresource Integrity (SRI)** — Verify third-party scripts haven't been tampered with

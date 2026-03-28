@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Traffic Analyzer — Security Research</title>
+    <meta name="description" content="Real-time visualization of WebSocket exfiltration traffic from keystroke capture payloads">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #06060e;
+            --bg-elevated: #0d0d1a;
+            --bg-card: #111125;
+            --bg-card-hover: #161636;
+            --surface: rgba(255, 255, 255, 0.03);
+            --border: rgba(255, 255, 255, 0.06);
+            --border-active: rgba(6, 182, 212, 0.3);
+            --text: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #475569;
+            --primary: #6366f1;
+            --cyan: #06b6d4;
+            --cyan-dim: rgba(6, 182, 212, 0.12);
+            --green: #22c55e;
+            --green-dim: rgba(34, 197, 94, 0.10);
+            --red: #ef4444;
+            --red-dim: rgba(239, 68, 68, 0.10);
+            --amber: #f59e0b;
+            --amber-dim: rgba(245, 158, 11, 0.10);
+            --purple: #a855f7;
+            --purple-dim: rgba(168, 85, 247, 0.10);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* ─── Ambient Background ─────────────────────────── */
+        .ambient-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 0;
+            pointer-events: none;
+            background:
+                radial-gradient(ellipse at 15% 20%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 85% 80%, rgba(99, 102, 241, 0.04) 0%, transparent 50%);
+        }
+
+        /* ─── Grid Lines Background ──────────────────────── */
+        .grid-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+            -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+        }
+
+        /* ─── Top Bar ────────────────────────────────────── */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+            height: 56px;
+            background: rgba(6, 6, 14, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .topbar-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            letter-spacing: -0.02em;
+        }
+
+        .topbar-logo svg {
+            color: var(--cyan);
+        }
+
+        .topbar-badge {
+            font-size: 0.55rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            background: var(--cyan-dim);
+            color: var(--cyan);
+            padding: 3px 8px;
+            border-radius: 4px;
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .topbar-link {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .topbar-link:hover { color: var(--cyan); }
+
+        .conn-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+        }
+
+        .conn-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: all 0.3s;
+        }
+
+        .conn-dot.connected {
+            background: var(--cyan);
+            box-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+        }
+
+        /* ─── Main Layout ────────────────────────────────── */
+        .main-content {
+            position: relative;
+            z-index: 1;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px 28px 40px;
+        }
+
+        .page-header {
+            margin-bottom: 28px;
+        }
+
+        .page-header h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin-bottom: 6px;
+            background: linear-gradient(135deg, var(--cyan), #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            max-width: 600px;
+        }
+
+        /* ─── Stats Row ──────────────────────────────────── */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            border-color: var(--border-active);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-icon {
+            width: 42px; height: 42px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .stat-icon.packets { background: var(--cyan-dim); color: var(--cyan); }
+        .stat-icon.bytes { background: var(--purple-dim); color: var(--purple); }
+        .stat-icon.ws { background: var(--green-dim); color: var(--green); }
+        .stat-icon.events { background: var(--amber-dim); color: var(--amber); }
+        .stat-icon.threats { background: var(--red-dim); color: var(--red); }
+
+        .stat-info { display: flex; flex-direction: column; }
+
+        .stat-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            font-family: var(--mono);
+        }
+
+        .stat-label {
+            font-size: 0.62rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .stat-value.flash {
+            animation: flashVal 0.4s ease;
+        }
+
+        @keyframes flashVal {
+            0% { color: var(--cyan); transform: scale(1.08); }
+            100% { color: var(--text); transform: scale(1); }
+        }
+
+        /* ─── Grid Layout ────────────────────────────────── */
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 20px;
+        }
+
+        /* ─── Panel ──────────────────────────────────────── */
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            overflow: hidden;
+            transition: border-color 0.3s;
+        }
+
+        .panel:hover { border-color: rgba(255, 255, 255, 0.08); }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-header h2 {
+            font-size: 0.82rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-badge {
+            font-size: 0.5rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        .badge-live {
+            background: var(--red-dim);
+            color: var(--red);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .badge-live::before {
+            content: '';
+            width: 4px; height: 4px;
+            border-radius: 50%;
+            background: var(--red);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+        }
+
+        .btn-ghost {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: 0.65rem;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-ghost:hover { background: var(--surface); color: var(--text-secondary); }
+
+        /* ─── Packet Log ─────────────────────────────────── */
+        .packet-log-panel {
+            grid-column: 1 / 2;
+            grid-row: 1 / 3;
+        }
+
+        .packet-log {
+            height: 560px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        .packet-log::-webkit-scrollbar { width: 4px; }
+        .packet-log::-webkit-scrollbar-track { background: transparent; }
+        .packet-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        .packet-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 12px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .packet-empty svg { opacity: 0.25; }
+        .packet-empty span { font-size: 0.72rem; }
+        .packet-empty a { color: var(--cyan); text-decoration: none; }
+
+        .packet-entry {
+            padding: 10px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            font-family: var(--mono);
+            font-size: 0.72rem;
+            animation: packetSlide 0.25s ease;
+            transition: background 0.15s;
+            cursor: default;
+        }
+
+        .packet-entry:hover { background: rgba(6, 182, 212, 0.03); }
+
+        @keyframes packetSlide {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .packet-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .packet-dir {
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 3px;
+            min-width: 28px;
+            text-align: center;
+        }
+
+        .packet-dir.outbound { background: var(--red-dim); color: var(--red); }
+        .packet-dir.inbound { background: var(--green-dim); color: var(--green); }
+
+        .packet-type {
+            color: var(--cyan);
+            min-width: 100px;
+        }
+
+        .packet-size {
+            color: var(--purple);
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .packet-time {
+            color: var(--text-muted);
+            font-size: 0.6rem;
+            min-width: 75px;
+            text-align: right;
+            margin-left: auto;
+        }
+
+        .packet-payload {
+            margin-top: 6px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.35);
+            border-radius: 6px;
+            font-size: 0.65rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease, padding 0.3s ease, margin 0.3s ease;
+        }
+
+        .packet-entry.expanded .packet-payload {
+            max-height: 200px;
+            padding: 8px 12px;
+            margin-top: 6px;
+        }
+
+        .packet-entry:not(.expanded) .packet-payload {
+            padding: 0 12px;
+            margin-top: 0;
+        }
+
+        .payload-key { color: var(--amber); }
+        .payload-value { color: var(--green); }
+        .payload-sensitive { color: var(--red); font-weight: 600; }
+
+        /* ─── Traffic Sparkline ───────────────────────────── */
+        .sparkline-panel {
+            grid-column: 2 / 3;
+            grid-row: 1 / 2;
+        }
+
+        .sparkline-container {
+            padding: 16px 20px;
+            height: 220px;
+            position: relative;
+        }
+
+        .sparkline-container canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .sparkline-legend {
+            display: flex;
+            gap: 16px;
+            padding: 0 20px 12px;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+        }
+
+        .sparkline-legend span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .legend-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.out { background: var(--red); }
+        .legend-dot.in { background: var(--green); }
+
+        /* ─── Connection Timeline ────────────────────────── */
+        .timeline-panel {
+            grid-column: 2 / 3;
+            grid-row: 2 / 3;
+        }
+
+        .timeline-container {
+            padding: 16px 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .timeline-container::-webkit-scrollbar { width: 3px; }
+        .timeline-container::-webkit-scrollbar-track { background: transparent; }
+        .timeline-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .timeline-entry {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 8px 0;
+            position: relative;
+            animation: packetSlide 0.3s ease;
+        }
+
+        .timeline-entry:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            left: 9px;
+            top: 28px;
+            bottom: -8px;
+            width: 1px;
+            background: var(--border);
+        }
+
+        .timeline-dot {
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 0.55rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .timeline-dot.connect { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34, 197, 94, 0.3); }
+        .timeline-dot.data { background: var(--cyan-dim); color: var(--cyan); border: 1px solid rgba(6, 182, 212, 0.3); }
+        .timeline-dot.alert { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .timeline-dot.info { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+
+        .timeline-info { flex: 1; }
+
+        .timeline-title {
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .timeline-detail {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            font-family: var(--mono);
+        }
+
+        .timeline-time {
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            font-family: var(--mono);
+            flex-shrink: 0;
+        }
+
+        /* ─── Exfiltration Comparison ────────────────────── */
+        .comparison-panel {
+            grid-column: 1 / -1;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 60px 1fr;
+            align-items: stretch;
+        }
+
+        .comparison-side {
+            padding: 20px;
+        }
+
+        .comparison-side h3 {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .comparison-side.typed h3 { color: var(--green); }
+        .comparison-side.exfil h3 { color: var(--red); }
+
+        .comparison-content {
+            font-family: var(--mono);
+            font-size: 0.8rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            min-height: 80px;
+            line-height: 1.8;
+            word-break: break-all;
+        }
+
+        .typed-field {
+            margin-bottom: 8px;
+        }
+
+        .typed-field-label {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 3px;
+        }
+
+        .typed-field-value {
+            color: var(--green);
+        }
+
+        .typed-field-value.sensitive {
+            color: var(--red);
+        }
+
+        .comparison-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .comparison-arrow::before {
+            content: '';
+            position: absolute;
+            top: 0; bottom: 0;
+            width: 1px;
+            background: var(--border);
+            left: 50%;
+        }
+
+        .arrow-icon {
+            position: relative;
+            z-index: 1;
+            width: 32px; height: 32px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--red);
+            animation: arrowPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes arrowPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
+            50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+        }
+
+        .exfil-json {
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+        }
+
+        .exfil-json .json-key { color: var(--amber); }
+        .exfil-json .json-value { color: var(--cyan); }
+        .exfil-json .json-sensitive { color: var(--red); font-weight: 600; }
+
+        /* ─── Educational Banner ──────────────────────────── */
+        .edu-banner {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(99, 102, 241, 0.06));
+            border: 1px solid rgba(6, 182, 212, 0.15);
+            border-radius: 14px;
+            padding: 24px 28px;
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        .edu-banner-icon {
+            width: 44px; height: 44px;
+            background: var(--cyan-dim);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 1.3rem;
+        }
+
+        .edu-banner h3 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .edu-banner p {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .edu-banner code {
+            font-family: var(--mono);
+            font-size: 0.72rem;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--cyan);
+        }
+
+        /* ─── Responsive ─────────────────────────────────── */
+        @media (max-width: 1100px) {
+            .stats-row { grid-template-columns: repeat(3, 1fr); }
+            .grid-layout { grid-template-columns: 1fr; }
+            .packet-log-panel { grid-column: auto; grid-row: auto; }
+            .sparkline-panel { grid-column: auto; grid-row: auto; }
+            .timeline-panel { grid-column: auto; grid-row: auto; }
+            .comparison-panel { grid-column: auto; }
+            .packet-log { height: 400px; }
+        }
+
+        @media (max-width: 700px) {
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .comparison-grid { grid-template-columns: 1fr; }
+            .comparison-arrow { display: none; }
+            .topbar { padding: 0 14px; }
+            .main-content { padding: 16px 14px 32px; }
+        }
+
+        /* ─── Scan line animation ────────────────────────── */
+        .scanline {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+            opacity: 0;
+            z-index: 200;
+            pointer-events: none;
+            animation: scanline 4s ease-in-out infinite;
+        }
+
+        @keyframes scanline {
+            0%, 90%, 100% { opacity: 0; top: 0; }
+            5% { opacity: 0.4; }
+            50% { opacity: 0.15; }
+            89% { opacity: 0.3; top: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="ambient-bg"></div>
+    <div class="grid-bg"></div>
+    <div class="scanline"></div>
+
+    <!-- Top Bar -->
+    <nav class="topbar">
+        <div class="topbar-left">
+            <div class="topbar-logo">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+                <span>Network Analyzer</span>
+            </div>
+            <span class="topbar-badge">DEFENSE LAB</span>
+        </div>
+        <div class="topbar-right">
+            <div class="conn-status" id="conn-status">
+                <div class="conn-dot" id="conn-dot"></div>
+                <span id="conn-text">Disconnected</span>
+            </div>
+            <a href="/defense" class="topbar-link">← Defense Lab</a>
+            <a href="/dashboard" class="topbar-link">📊 Dashboard</a>
+            <a href="/target" class="topbar-link" target="_blank">🎯 Target</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- Header -->
+        <div class="page-header">
+            <h1>🌐 Network Traffic Analyzer</h1>
+            <p>Real-time visualization of WebSocket exfiltration traffic — see exactly what data the keylogger payload sends, when, and how much.</p>
+        </div>
+
+        <!-- Stats Row -->
+        <section class="stats-row">
+            <div class="stat-card">
+                <div class="stat-icon packets">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-packets">0</span>
+                    <span class="stat-label">Packets Captured</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon bytes">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-bytes">0 B</span>
+                    <span class="stat-label">Data Exfiltrated</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon ws">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12.55a11 11 0 0114.08 0"/>
+                        <path d="M1.42 9a16 16 0 0121.16 0"/>
+                        <path d="M8.53 16.11a6 6 0 016.95 0"/>
+                        <circle cx="12" cy="20" r="1"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-ws">0</span>
+                    <span class="stat-label">WebSocket Msgs</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon events">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-events">0</span>
+                    <span class="stat-label">Event Types</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon threats">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-threats">0</span>
+                    <span class="stat-label">Sensitive Fields</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Grid -->
+        <div class="grid-layout">
+            <!-- Packet Log (Left, spans 2 rows) -->
+            <section class="panel packet-log-panel">
+                <div class="panel-header">
+                    <h2>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                        Packet Inspector
+                        <span class="panel-badge badge-live">LIVE</span>
+                    </h2>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn-ghost" id="btn-autoscroll">⬇ Auto-scroll ON</button>
+                        <button class="btn-ghost" id="btn-clear-packets">Clear</button>
+                    </div>
+                </div>
+                <div class="packet-log" id="packet-log">
+                    <div class="packet-empty">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                        <p>Waiting for network traffic…</p>
+                        <span>Open the <a href="/target" target="_blank">target page</a> and interact with it</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Traffic Volume Sparkline (Right, top) -->
+            <section class="panel sparkline-panel">
+                <div class="panel-header">
+                    <h2>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                        Traffic Volume
+                    </h2>
+                    <span style="font-size:0.6rem; color:var(--text-muted); font-family:var(--mono);" id="traffic-rate">0 pkt/s</span>
+                </div>
+                <div class="sparkline-container">
+                    <canvas id="sparkline-canvas"></canvas>
+                </div>
+                <div class="sparkline-legend">
+                    <span><div class="legend-dot out"></div> Outbound (exfil)</span>
+                    <span><div class="legend-dot in"></div> Inbound (server)</span>
+                </div>
+            </section>
+
+            <!-- Connection Timeline (Right, bottom) -->
+            <section class="panel timeline-panel">
+                <div class="panel-header">
+                    <h2>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        Connection Timeline
+                    </h2>
+                </div>
+                <div class="timeline-container" id="timeline"></div>
+            </section>
+
+            <!-- Exfiltration Comparison (Bottom, full width) -->
+            <section class="panel comparison-panel">
+                <div class="panel-header">
+                    <h2>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="16 3 21 3 21 8"/>
+                            <line x1="4" y1="20" x2="21" y2="3"/>
+                            <polyline points="21 16 21 21 16 21"/>
+                            <line x1="15" y1="15" x2="21" y2="21"/>
+                            <line x1="4" y1="4" x2="9" y2="9"/>
+                        </svg>
+                        Exfiltration Comparison
+                    </h2>
+                    <span style="font-size:0.6rem; color:var(--text-muted);">What you typed vs. what was stolen</span>
+                </div>
+                <div class="comparison-grid">
+                    <div class="comparison-side typed">
+                        <h3>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            </svg>
+                            What You Typed
+                        </h3>
+                        <div class="comparison-content" id="comp-typed">
+                            <div class="typed-field">
+                                <div class="typed-field-label">email</div>
+                                <div class="typed-field-value" id="comp-email">_</div>
+                            </div>
+                            <div class="typed-field">
+                                <div class="typed-field-label">password</div>
+                                <div class="typed-field-value sensitive" id="comp-password">_</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="comparison-arrow">
+                        <div class="arrow-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                                <polyline points="12 5 19 12 12 19"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="comparison-side exfil">
+                        <h3>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                                <line x1="12" y1="9" x2="12" y2="13"/>
+                                <line x1="12" y1="17" x2="12.01" y2="17"/>
+                            </svg>
+                            What Was Exfiltrated
+                        </h3>
+                        <div class="comparison-content exfil-json" id="comp-exfil">
+                            <span style="color: var(--text-muted);">Waiting for captured data…</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Educational Banner -->
+            <div class="edu-banner">
+                <div class="edu-banner-icon">🔍</div>
+                <div>
+                    <h3>What You're Seeing</h3>
+                    <p>
+                        This page intercepts and displays every piece of data the keylogger payload sends to the server over its WebSocket connection.
+                        In a real attack, this traffic would be invisible — hidden inside encrypted <code>wss://</code> connections to an attacker's server.
+                        Use browser DevTools → <strong>Network tab → WS filter</strong> to see this traffic yourself.<br><br>
+                        <strong>Defense:</strong> A strict <code>Content-Security-Policy</code> with <code>connect-src 'self'</code> blocks all unauthorized outbound connections, neutralizing the exfiltration completely.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+    (function() {
+        'use strict';
+
+        // ─── DOM Refs ───────────────────────────────────────
+        const packetLog = document.getElementById('packet-log');
+        const timeline = document.getElementById('timeline');
+        const canvas = document.getElementById('sparkline-canvas');
+        const ctx = canvas.getContext('2d');
+
+        const statPackets = document.getElementById('stat-packets');
+        const statBytes = document.getElementById('stat-bytes');
+        const statWs = document.getElementById('stat-ws');
+        const statEvents = document.getElementById('stat-events');
+        const statThreats = document.getElementById('stat-threats');
+        const connDot = document.getElementById('conn-dot');
+        const connText = document.getElementById('conn-text');
+        const trafficRate = document.getElementById('traffic-rate');
+
+        const compEmail = document.getElementById('comp-email');
+        const compPassword = document.getElementById('comp-password');
+        const compExfil = document.getElementById('comp-exfil');
+
+        // ─── State ──────────────────────────────────────────
+        let totalPackets = 0;
+        let totalBytes = 0;
+        let totalWsMessages = 0;
+        let eventTypes = new Set();
+        let sensitiveFields = 0;
+        let autoScroll = true;
+        let packetLogStarted = false;
+
+        // Reconstructed fields
+        let reconstructed = { email: '', password: '' };
+
+        // Sparkline data (60 data points, 1 per second)
+        const SPARKLINE_SIZE = 60;
+        let outboundData = new Array(SPARKLINE_SIZE).fill(0);
+        let inboundData = new Array(SPARKLINE_SIZE).fill(0);
+        let currentSecondOut = 0;
+        let currentSecondIn = 0;
+
+        // Exfiltrated payloads log
+        let exfilPayloads = [];
+
+        // ─── Socket.IO ──────────────────────────────────────
+        const socket = io({
+            transports: ['websocket', 'polling'],
+            reconnection: true
+        });
+
+        socket.on('connect', () => {
+            socket.emit('dashboard:join');
+            updateConnection(true);
+            addTimelineEntry('connect', 'WebSocket Connected', `Transport: ${socket.io.engine.transport.name}`, 'ws://');
+        });
+
+        socket.on('disconnect', () => {
+            updateConnection(false);
+            addTimelineEntry('alert', 'WebSocket Disconnected', 'Connection lost', '');
+        });
+
+        // ─── Intercept all dashboard events as "traffic" ────
+
+        socket.on('session:new', (data) => {
+            const payload = JSON.stringify(data);
+            addPacket('inbound', 'session:new', payload, data);
+            eventTypes.add('session:new');
+            addTimelineEntry('connect', 'New Session Registered', `ID: ${truncate(data.id, 20)}`, data.metadata?.browser || '?');
+            updateStats();
+        });
+
+        socket.on('keystrokes:live', (data) => {
+            const payload = JSON.stringify(data);
+            addPacket('outbound', 'keystrokes', payload, data);
+            eventTypes.add('keystrokes');
+
+            // Reconstruct
+            (data.keys || []).forEach(k => {
+                reconstructKey(k);
+                if (k.field === 'password') sensitiveFields++;
+            });
+
+            updateComparison(data);
+            updateStats();
+        });
+
+        socket.on('clipboard:live', (data) => {
+            const payload = JSON.stringify(data);
+            addPacket('outbound', 'clipboard', payload, data);
+            eventTypes.add('clipboard');
+            addTimelineEntry('alert', 'Clipboard Intercepted', `"${truncate(data.content, 30)}"`, data.field);
+            
+            if (data.field && reconstructed[data.field] !== undefined) {
+                reconstructed[data.field] += data.content;
+            }
+            sensitiveFields++;
+            updateStats();
+        });
+
+        socket.on('form:live', (data) => {
+            const payload = JSON.stringify(data);
+            addPacket('outbound', 'form-submit', payload, data);
+            eventTypes.add('form-submit');
+            sensitiveFields += Object.keys(data.fields || {}).length;
+            addTimelineEntry('alert', '🚨 Form Data Captured', `Fields: ${Object.keys(data.fields || {}).join(', ')}`, '');
+            updateExfilWithForm(data);
+            updateStats();
+        });
+
+        socket.on('click:live', (data) => {
+            const payload = JSON.stringify(data);
+            addPacket('outbound', 'click', payload, data);
+            eventTypes.add('click');
+            updateStats();
+        });
+
+        socket.on('session:disconnected', (data) => {
+            addTimelineEntry('alert', 'Session Disconnected', `ID: ${truncate(data.sessionId, 20)}`, '');
+        });
+
+        // ─── Packet Log ─────────────────────────────────────
+
+        function addPacket(direction, type, rawPayload, parsedData) {
+            if (!packetLogStarted) {
+                packetLog.innerHTML = '';
+                packetLogStarted = true;
+            }
+
+            totalPackets++;
+            const byteSize = new Blob([rawPayload]).size;
+            totalBytes += byteSize;
+            totalWsMessages++;
+
+            if (direction === 'outbound') currentSecondOut++;
+            else currentSecondIn++;
+
+            const el = document.createElement('div');
+            el.className = 'packet-entry';
+
+            const time = new Date().toLocaleTimeString('en-GB', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 1
+            });
+
+            // Build highlighted payload
+            const highlightedPayload = highlightJson(parsedData);
+
+            el.innerHTML = `
+                <div class="packet-row">
+                    <span class="packet-dir ${direction}">${direction === 'outbound' ? '▲ OUT' : '▼ IN'}</span>
+                    <span class="packet-type">${type}</span>
+                    <span class="packet-size">${formatBytes(byteSize)}</span>
+                    <span class="packet-time">${time}</span>
+                </div>
+                <div class="packet-payload">${highlightedPayload}</div>
+            `;
+
+            el.addEventListener('click', () => {
+                el.classList.toggle('expanded');
+            });
+
+            packetLog.appendChild(el);
+
+            if (autoScroll) {
+                packetLog.scrollTop = packetLog.scrollHeight;
+            }
+
+            // Limit entries
+            while (packetLog.children.length > 500) {
+                packetLog.removeChild(packetLog.firstChild);
+            }
+        }
+
+        function highlightJson(obj, indent = 0) {
+            if (typeof obj !== 'object' || obj === null) {
+                const str = JSON.stringify(obj);
+                if (isSensitiveValue(str)) {
+                    return `<span class="payload-sensitive">${escapeHtml(str)}</span>`;
+                }
+                return `<span class="payload-value">${escapeHtml(str)}</span>`;
+            }
+
+            const pad = '  '.repeat(indent);
+            const padInner = '  '.repeat(indent + 1);
+            const isArray = Array.isArray(obj);
+
+            let lines = [isArray ? '[' : '{'];
+            const entries = isArray ? obj.map((v, i) => [i, v]) : Object.entries(obj);
+
+            entries.forEach(([key, val], idx) => {
+                const comma = idx < entries.length - 1 ? ',' : '';
+                const keyPart = isArray ? '' : `<span class="payload-key">"${escapeHtml(key)}"</span>: `;
+                const isSensitive = typeof key === 'string' && ['password', 'content', 'key'].includes(key.toLowerCase());
+
+                if (typeof val === 'object' && val !== null) {
+                    lines.push(padInner + keyPart + highlightJson(val, indent + 1) + comma);
+                } else {
+                    const valStr = JSON.stringify(val);
+                    const valClass = isSensitive ? 'payload-sensitive' : 'payload-value';
+                    lines.push(padInner + keyPart + `<span class="${valClass}">${escapeHtml(valStr)}</span>` + comma);
+                }
+            });
+
+            lines.push(pad + (isArray ? ']' : '}'));
+            return lines.join('\n');
+        }
+
+        function isSensitiveValue(str) {
+            return false;
+        }
+
+        // ─── Comparison Panel ───────────────────────────────
+
+        function reconstructKey(k) {
+            const field = k.field;
+            if (!field || !reconstructed.hasOwnProperty(field)) return;
+
+            const key = k.key;
+            if (key === '[Backspace]') {
+                reconstructed[field] = reconstructed[field].slice(0, -1);
+            } else if (key.startsWith('[') && key.endsWith(']')) {
+                // skip special keys
+            } else {
+                reconstructed[field] += key;
+            }
+
+            compEmail.textContent = reconstructed.email || '_';
+            compPassword.textContent = reconstructed.password || '_';
+        }
+
+        function updateComparison(data) {
+            exfilPayloads.push(data);
+
+            // Show last few exfiltrated payloads
+            const recent = exfilPayloads.slice(-3);
+            compExfil.innerHTML = recent.map(d => {
+                const keys = (d.keys || []).map(k =>
+                    `  <span class="json-key">"key"</span>: <span class="${k.field === 'password' ? 'json-sensitive' : 'json-value'}">"${escapeHtml(k.key)}"</span>, <span class="json-key">"field"</span>: <span class="json-value">"${escapeHtml(k.field || '?')}"</span>`
+                ).join('\n');
+                return `{ <span class="json-key">"sessionId"</span>: <span class="json-value">"${truncate(d.sessionId, 16)}"</span>,\n  <span class="json-key">"keys"</span>: [\n${keys}\n  ] }`;
+            }).join('\n\n');
+        }
+
+        function updateExfilWithForm(data) {
+            compExfil.innerHTML += `\n\n<span class="json-sensitive">🚨 FORM CAPTURED:</span>\n{ ${
+                Object.entries(data.fields || {}).map(([k, v]) =>
+                    `<span class="json-key">"${escapeHtml(k)}"</span>: <span class="json-sensitive">"${escapeHtml(v)}"</span>`
+                ).join(',\n  ')
+            } }`;
+        }
+
+        // ─── Timeline ───────────────────────────────────────
+
+        function addTimelineEntry(type, title, detail, extra) {
+            const time = new Date().toLocaleTimeString('en-GB', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+
+            const icons = {
+                connect: '⚡',
+                data: '📦',
+                alert: '⚠',
+                info: 'ℹ'
+            };
+
+            const el = document.createElement('div');
+            el.className = 'timeline-entry';
+            el.innerHTML = `
+                <div class="timeline-dot ${type}">${icons[type] || '•'}</div>
+                <div class="timeline-info">
+                    <div class="timeline-title">${title}</div>
+                    <div class="timeline-detail">${escapeHtml(detail)}</div>
+                </div>
+                <span class="timeline-time">${time}</span>
+            `;
+
+            timeline.prepend(el);
+
+            // Limit
+            while (timeline.children.length > 100) {
+                timeline.removeChild(timeline.lastChild);
+            }
+        }
+
+        // ─── Sparkline ──────────────────────────────────────
+
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * (window.devicePixelRatio || 1);
+            canvas.height = rect.height * (window.devicePixelRatio || 1);
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+        }
+
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        function drawSparkline() {
+            const w = canvas.width / (window.devicePixelRatio || 1);
+            const h = canvas.height / (window.devicePixelRatio || 1);
+            ctx.clearRect(0, 0, w, h);
+
+            const maxVal = Math.max(5, ...outboundData, ...inboundData);
+            const barWidth = w / SPARKLINE_SIZE;
+            const barGap = 1;
+
+            // Draw grid lines
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.lineWidth = 1;
+            for (let i = 1; i < 4; i++) {
+                const y = h * (i / 4);
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+
+            // Draw outbound bars
+            outboundData.forEach((val, i) => {
+                const barH = (val / maxVal) * (h * 0.9);
+                const x = i * barWidth;
+                const y = h - barH;
+
+                ctx.fillStyle = val > 0 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(239, 68, 68, 0.05)';
+                ctx.beginPath();
+                ctx.roundRect(x + barGap / 2, y, barWidth - barGap, barH, 1);
+                ctx.fill();
+
+                // Glow on active bars
+                if (val > 0 && i === outboundData.length - 1) {
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+                    ctx.beginPath();
+                    ctx.roundRect(x + barGap / 2 - 1, y - 2, barWidth - barGap + 2, barH + 4, 2);
+                    ctx.fill();
+                }
+            });
+
+            // Draw inbound bars (overlaid, narrower)
+            inboundData.forEach((val, i) => {
+                if (val === 0) return;
+                const barH = (val / maxVal) * (h * 0.9);
+                const x = i * barWidth + barWidth * 0.3;
+                const y = h - barH;
+
+                ctx.fillStyle = 'rgba(34, 197, 94, 0.5)';
+                ctx.beginPath();
+                ctx.roundRect(x, y, barWidth * 0.4, barH, 1);
+                ctx.fill();
+            });
+
+            // Axis label
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.font = '9px Inter';
+            ctx.fillText(`max: ${maxVal}`, 4, 12);
+            ctx.fillText('60s ago', 4, h - 4);
+            ctx.fillText('now', w - 22, h - 4);
+        }
+
+        // Shift sparkline data every second
+        setInterval(() => {
+            outboundData.shift();
+            outboundData.push(currentSecondOut);
+            inboundData.shift();
+            inboundData.push(currentSecondIn);
+
+            trafficRate.textContent = `${currentSecondOut + currentSecondIn} pkt/s`;
+
+            currentSecondOut = 0;
+            currentSecondIn = 0;
+
+            drawSparkline();
+        }, 1000);
+
+        drawSparkline();
+
+        // ─── Stats & Utils ──────────────────────────────────
+
+        function updateStats() {
+            animateValue(statPackets, totalPackets);
+            statBytes.textContent = formatBytes(totalBytes);
+            animateValue(statWs, totalWsMessages);
+            animateValue(statEvents, eventTypes.size);
+            animateValue(statThreats, sensitiveFields);
+        }
+
+        function animateValue(el, val) {
+            el.textContent = val;
+            el.classList.remove('flash');
+            void el.offsetWidth;
+            el.classList.add('flash');
+        }
+
+        function updateConnection(connected) {
+            connDot.className = 'conn-dot' + (connected ? ' connected' : '');
+            connText.textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function truncate(str, len) {
+            if (!str) return '';
+            return str.length > len ? str.substring(0, len) + '…' : str;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = String(str);
+            return div.innerHTML;
+        }
+
+        // ─── Button Handlers ────────────────────────────────
+
+        document.getElementById('btn-autoscroll').addEventListener('click', function() {
+            autoScroll = !autoScroll;
+            this.textContent = autoScroll ? '⬇ Auto-scroll ON' : '⬇ Auto-scroll OFF';
+        });
+
+        document.getElementById('btn-clear-packets').addEventListener('click', () => {
+            packetLog.innerHTML = '<div class="packet-empty"><p>Packet log cleared</p></div>';
+            packetLogStarted = false;
+        });
+
+        // ─── Initial Timeline Entry ─────────────────────────
+        addTimelineEntry('info', 'Analyzer Started', 'Listening for WebSocket traffic…', '');
+
+    })();
+    </script>
+</body>
+</html>
